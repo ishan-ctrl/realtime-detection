@@ -1,23 +1,116 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>YOLO Real-time Detection</title>
+    <title>Real-time Detection</title>
     <style>
         body {
             margin: 0;
             background-color: #000;
             text-align: center;
         }
-        img {
+        #video {
+            border: 3px solid white;
             width: 90%;
             max-width: 800px;
-            border: 5px solid white;
-            margin-top: 20px;
+        }
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        .container {
+            position: relative;
+            display: inline-block;
+        }
+        label {
+            color: white;
+            font-size: 16px;
+            margin: 10px;
+        }
+        select {
+            font-size: 16px;
+            padding: 5px;
         }
     </style>
 </head>
 <body>
     <h2 style="color:white;">Real-time Detection</h2>
-    <img src="/video_feed" id="video">
+
+    <label>
+        Detection Speed:
+        <select id="fps-select">
+            <option value="1">1 FPS (light)</option>
+            <option value="2">2 FPS</option>
+            <option value="5">5 FPS (fast)</option>
+        </select>
+    </label>
+
+    <div class="container">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="canvas"></canvas>
+    </div>
+
+    <script>
+        const video = document.getElementById("video");
+        const canvas = document.getElementById("canvas");
+        const ctx = canvas.getContext("2d");
+
+        async function setupCamera() {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 1920 },
+                    height: { ideal: 1080 }
+                }
+            });
+            video.srcObject = stream;
+
+            video.onloadedmetadata = () => {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                detectLoop();  // Start detection loop
+            };
+        }
+
+        async function detectLoop() {
+            while (true) {
+                const fps = parseInt(document.getElementById("fps-select").value);
+                const interval = 1000 / fps;
+
+                await new Promise(r => setTimeout(r, interval));
+
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                canvas.toBlob(sendFrame, "image/jpeg");
+            }
+        }
+
+        async function sendFrame(blob) {
+            const formData = new FormData();
+            formData.append("file", blob, "frame.jpg");
+
+            const response = await fetch("/detect/", {
+                method: "POST",
+                body: formData
+            });
+
+            const data = await response.json();
+            drawBoxes(data.detections);
+        }
+
+        function drawBoxes(detections) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            for (let det of detections) {
+                const [x1, y1, x2, y2] = det.box;
+                ctx.strokeStyle = "lime";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+                ctx.fillStyle = "lime";
+                ctx.font = "16px sans-serif";
+                ctx.fillText(`${det.label} (${det.confidence})`, x1, y1 > 20 ? y1 - 5 : y1 + 15);
+            }
+        }
+
+        setupCamera();
+    </script>
 </body>
 </html>
